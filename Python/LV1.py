@@ -5,7 +5,7 @@ import math
 import os
 import main as main_script
 import optionen as optionen_screen
-
+import random
 
 
 
@@ -157,7 +157,7 @@ def update_remote_players(players):
 SERVER_IP = "127.0.0.1"   # z. B. für lokale Tests
 SERVER_TCP_PORT = 5000
 
-
+KILLED_MAX = 5
 
 
 class MultiplayerEnemy():
@@ -293,7 +293,7 @@ background_middle_foreground = pygame.transform.scale(background_middle_foregrou
 print("Run Speed: ", RUN_SPEED)
 
 # Array mit Gegnerinformationen die für die Initialisierung der Gegner verwendet werden
-level1_enemies_positiones = [[(LEVEL_WIDTH*0.2,0.75*screen_size[1]),1,0.5,1],[(LEVEL_WIDTH*0.25,0.605*screen_size[1]),2,1,0.5],[(LEVEL_WIDTH*0.316,0.305*screen_size[1]),5,1],[(LEVEL_WIDTH*0.511,screen_size[1]*0.115),5,3,0.4],[(LEVEL_WIDTH*0.55,screen_size[1]*0.73),5,1],[(LEVEL_WIDTH*0.675,0.36*screen_size[1]),5,1],[(LEVEL_WIDTH*0.68,screen_size[1]*0.75),5,1]]
+level1_enemies_positiones = []
 
 class GameState:
     # eine Art globale variablen zu machen, ohne globale variablen zu verwenden
@@ -614,7 +614,7 @@ class World:
         """moves the background (so that it appeares that the player is moving).
         
         dx: how much to move the background on the x-axis."""
-        if(self.x <= 0 or dx < 0):
+        if(self.x <= 300 or dx < 0):
             self.x += dx
             self.background_foreground_rect = self.background_foreground_rect.move(dx,0)
             self.background_middle_foreground_rect = self.background_middle_foreground_rect.move(dx/2,0)
@@ -653,6 +653,8 @@ class Player:
         self.walking_left = False
         self.crouch = False
         self.last_jump = time.time()
+        
+        self.killed_num = 0
 
         self.coin_count = 0
         self.health = 7
@@ -719,6 +721,10 @@ class Player:
                 world.__init__()
                 gs.dead = False
                 self.health = 7
+                self.killed_num += 1
+                if self.killed_num > KILLED_MAX:
+                    gs.running = False
+                    DialogBox(["Wow, du bist tot!","Das ist nicht gut!"],(player.x+100, 700))
 
     def display_health(self, surface):
         """displayes the players health on the given surface."""
@@ -782,11 +788,11 @@ class Player:
             self.current_frame = (self.current_frame + gs.dt_last_frame/4 * 1) % (len(self.animation_frames))
         else:
             self.current_frame = 3
-        if -world.x + self.x >= screen_size[1]*11200/1080 - screen_size[0]//2:
-            gs.movement_enebled = False
-            if DialogBox.boxes == []:
-                gs.end_of_game = True
-                DialogBox(["Wow, du hast es geschafft!", "Bist du bereit weiter zu gehen?"],(player.x+100, 700))
+        # if -world.x + self.x >= screen_size[1]*11200/1080 - screen_size[0]//2:
+        #     gs.movement_enebled = False
+        #     if DialogBox.boxes == []:
+        #         gs.end_of_game = True
+        #         DialogBox(["Wow, du hast es geschafft!", "Bist du bereit weiter zu gehen?"],(player.x+100, 700))
 
 def get_rotation_angle(velocity):
     """get rotation angles so that something faces the correct direction.
@@ -937,10 +943,11 @@ class shot:
 world = World()
 player = Player()
 FPS = pygame.time.Clock()
-DialogBox(["Hello!", "How are you?", "Good Luck!"], (screen_size[0]//2 + 200,580))
+DialogBox(["Let's Go!"], (screen_size[0]//2 + 200,580))
 
 #Haupt Game loop, wird aus main.py gestartet
 def main(optionen): 
+    world.move(-int(random.random()*(world.background_rect.width-2000)))
     gs.Options_prototype = optionen
     gs.running = True
     while gs.running:
