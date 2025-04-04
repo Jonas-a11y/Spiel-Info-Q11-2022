@@ -850,7 +850,7 @@ class shot:
             self.coordinates = coordinates_origin
             shot.last_shot_fired = time.time()
             shot.shots_left -= 1
-            shot_send_to_server(cords_target, coordinates_origin, shot_by_player, shot_speed=1)
+            shot_send_to_server(cords_target, coordinates_origin, shot_by_player, shot_speed/2)
             main_script.sound_shot()
         elif not shot_by_player and gs.shooting_enebled:
             shot.shots_list.append(self)
