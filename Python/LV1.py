@@ -6,6 +6,200 @@ import os
 import main as main_script
 import optionen as optionen_screen
 
+
+
+
+
+
+
+
+
+
+
+
+import socket
+import threading
+import json
+import time
+import pygame
+
+class NetworkClient:
+    def __init__(self, server_ip, server_tcp_port, get_position_callback, update_callback=None):
+        """
+        server_ip, server_tcp_port: Server-Verbindungsdaten.
+        get_position_callback: Funktion, die beim Aufruf ein Dict {"x": ..., "y": ...} zurückgibt.
+        update_callback: Optionaler Callback, der bei Erhalt von Remote-Player-Daten aufgerufen wird.
+        """
+        self.server_ip = server_ip
+        self.server_tcp_port = server_tcp_port
+        self.get_position = get_position_callback
+        self.update_callback = update_callback
+        
+        self.shot_queue = []
+
+        self.sock = None
+        self.my_id = None
+        self.running = False
+        self.remote_players = {}  # { "player_id": {"x": ..., "y": ...} }
+        if platform == "linux" or platform == "linux2":
+            pass
+        elif platform == "darwin":
+            self.image = pygame.image.load("Bilder/downloads/turret1.png").convert_alpha()
+            self.image2 = pygame.image.load("Bilder/downloads/turret_2.png").convert_alpha()
+        elif platform == "win32":
+            self.image = pygame.image.load("Bilder\\downloads\\turret1.png").convert_alpha()
+            self.image2 = pygame.image.load("Bilder\\downloads\\turret_2.png").convert_alpha()
+        size=(130,150)
+        self.image = pygame.transform.scale(self.image, size)
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((self.server_ip, self.server_tcp_port))
+        self.running = True
+        print("Mit dem Server verbunden:", self.server_ip)
+        threading.Thread(target=self.receive_messages, daemon=True).start()
+        threading.Thread(target=self.send_updates_loop, daemon=True).start()
+
+    def send_json(self, data):
+        try:
+            message = json.dumps(data) + "\n"
+            self.sock.sendall(message.encode())
+        except Exception as e:
+            print("Fehler beim Senden von JSON:", e)
+
+    def receive_messages(self):
+        sock_file = self.sock.makefile('r')
+        while self.running:
+            try:
+                line = sock_file.readline()
+                if not line:
+                    print("Verbindung zum Server verloren!")
+                    self.running = False
+                    break
+                try:
+                    message = json.loads(line)
+                except Exception as e:
+                    print("JSON-Decode-Fehler:", e)
+                    continue
+                if message.get("type") == "assign":
+                    self.my_id = message["id"]
+                    print("Zugewiesene Spieler-ID:", self.my_id)
+                elif message.get("type") == "players":
+                    players = message.get("players", {})
+                    # Entferne den eigenen Eintrag
+                    if self.my_id is not None:
+                        players.pop(str(self.my_id), None)
+                    self.remote_players = players
+                    if self.update_callback:
+                        self.update_callback(players)
+            except Exception as e:
+                print("Fehler beim Empfangen von Nachrichten:", e)
+                break
+
+    def send_updates_loop(self, tick_rate=30):
+        update_interval = 1 / tick_rate
+        print("Update-Loop gestartet")
+        while self.running:
+            try:
+                pos = get_player_position()  # Erwartet dict {"x":..., "y":...}
+                print("Shots:",self.shot_queue)
+                if len(self.shot_queue) > 0:
+                    msg = {"type": "update", "x": pos["x"], "y": pos["y"], "hp": player.health, "shots": self.shot_queue[0]}
+                    self.shot_queue.pop(0)
+                    print(msg)
+                else:
+                    msg = {"type": "update", "x": pos["x"], "y": pos["y"], "hp": player.health}
+                print(msg)
+                self.send_json(msg)
+            except Exception as e:
+                print("Fehler beim Senden der Updates:", e)
+            time.sleep(update_interval)
+
+    def render(self, surface, world_offset=0, color=(0, 0, 255), size=(50, 50)):
+        """
+        Zeichnet die entfernten Spieler (als einfache Rechtecke) auf dem übergebenen Surface.
+        world_offset wird zu den x-Koordinaten addiert.
+        """
+        for pid, pos in self.remote_players.items():
+            if pid not in MultiplayerEnemy.multi_enemy_list:
+                MultiplayerEnemy(pid, (pos.get("x", 0) + world_offset, pos.get("y", 0)))
+            remote_x = pos.get("x", 0) + world_offset
+            remote_y = pos.get("y", 0)
+            remote_hp = pos.get("hp", 7)
+            remote_shots = pos.get("shots", 0)
+            if remote_shots != 0:
+                shot(remote_shots["cords_target"], remote_shots["coordinates_origin"], False , remote_shots["shot_speed"])
+            MultiplayerEnemy.multi_enemy_list[pid].x = remote_x
+            MultiplayerEnemy.multi_enemy_list[pid].y = remote_y
+            MultiplayerEnemy.multi_enemy_list[pid].hp = remote_hp
+            MultiplayerEnemy.multi_enemy_list[pid].draw(surface)
+            MultiplayerEnemy.multi_enemy_list[pid].display_health_bar()
+
+    def disconnect(self):
+        self.running = False
+        if self.sock:
+            self.sock.close()
+
+
+# Beispiel: Callback, der die aktuelle Spielerposition zurückgibt
+def get_player_position():
+    if player:
+        return {"x": player.x-world.x, "y": player.y}
+    else:
+        return {"x": 0, "y": 0}
+
+# (Optional) Callback, falls du etwas bei Empfang remote Daten machen möchtest
+def update_remote_players(players):
+    # Hier könntest du z. B. Debug-Informationen ausgeben oder weitere Logik anstoßen.
+    pass
+
+# Definiere deine Server-IP und den Port (anpassen oder über Discovery ermitteln)
+SERVER_IP = "127.0.0.1"   # z. B. für lokale Tests
+SERVER_TCP_PORT = 5000
+
+
+
+
+class MultiplayerEnemy():
+    multi_enemy_list = {}
+    def __init__(self, id, coordinates=(1200,700) , hp=7, size=(100, 150)):
+        MultiplayerEnemy.multi_enemy_list[id] = self
+        self.id = id
+        self.hp = hp
+        self.size = size
+        self.coordinates = coordinates
+        self.x, self.y = coordinates
+        self.max_health = hp
+        
+        self.image = pygame.image.load("Bilder/downloads/turret1.png").convert_alpha() 
+        self.image = pygame.transform.scale(self.image, size)
+    
+    def draw(self, surface:pygame.surface):
+        if self.x > player.x:
+            surface.blit(pygame.transform.flip(self.image, True, False), (self.x,self.y))
+        else:
+            surface.blit(self.image, (self.x,self.y))
+        self.display_health_bar()
+        
+    def display_health_bar(self):
+        """displayed the health bar"""
+        color = (int(255-255*(self.hp/self.max_health)),int(255*(self.hp/self.max_health)),0)
+        pygame.draw.rect(display, color,pygame.Rect(self.x,self.y-25,100,20),3)
+        pygame.draw.rect(display, color,pygame.Rect(self.x,self.y-25,100*(self.hp/self.max_health),20))
+    
+
+
+
+
+
+def shot_send_to_server(cords_target, coordinates_origin, shot_by_player, shot_speed=1):
+    print("Shot send to server")
+    print(gs.server)
+    if gs.server:
+        gs.network_client.shot_queue.append({"cords_target": cords_target, "coordinates_origin": coordinates_origin, "shot_by_player": shot_by_player, "shot_speed": shot_speed})
+    else:
+        pass
+
 from sys import platform
 
 
@@ -110,11 +304,22 @@ class GameState:
         self.shooting_enebled = False
         self.movement_enebled = False
         self.end_of_game = False
+        self.server=True
+        self.network_client = None
         self.Options_prototype = {
             "master volume":1,
             "jump volume":1,
             "shot volume":1,
         }
+        
+        try:
+            # Initialisiere den Netzwerk-Client und verbinde dich
+            self.network_client = NetworkClient(SERVER_IP, SERVER_TCP_PORT, get_player_position, update_remote_players)
+            self.network_client.connect()
+            print("Verbindung zum Server hergestellt.")
+        except Exception as e:
+            print(f"Error connecting to server: {e}")
+            self.server = False
 
 gs = GameState()
 class enemy:
@@ -645,6 +850,7 @@ class shot:
             self.coordinates = coordinates_origin
             shot.last_shot_fired = time.time()
             shot.shots_left -= 1
+            shot_send_to_server(cords_target, coordinates_origin, shot_by_player, shot_speed=1)
             main_script.sound_shot()
         elif not shot_by_player and gs.shooting_enebled:
             shot.shots_list.append(self)
@@ -792,6 +998,10 @@ def main(optionen):
         player.update()
         world.draw(display)
         player.draw(display)
+        if gs.server:
+            # Zeichne die entfernten Spieler (z. B. als blaue Rechtecke)
+            gs.network_client.render(display, world_offset=world.x)
+        
         shot.display_magazine(display)
         player.display_health(display)
         player.display_coins(display)
@@ -810,6 +1020,8 @@ def main(optionen):
 
         pygame.display.flip()
         gs.dt_last_frame = FPS.tick()/17
+    # Falls nötig, beim Beenden die Verbindung sauber trennen
+    gs.network_client.disconnect()
     return (player.coin_count, gs.end_of_game)
 
 if __name__ == "__main__":
